@@ -1,0 +1,18 @@
+,model,accuracy,precision,recall,f1,roc_auc,avg_precision,train_time
+Logistic Regression,"LogisticRegression(max_iter=1000, random_state=42)",0.9905817738861749,0.8823159219634991,0.40827023878858476,0.5582321321919171,0.7695511680895897,0.49874651033510586,1.422175407409668
+Decision Tree,DecisionTreeClassifier(random_state=42),0.9908067247577533,0.854586129753915,0.44496214327315087,0.5852163921869016,0.7249522660161827,0.44785465770157773,1.0906472206115723
+Random Forest,"RandomForestClassifier(n_jobs=-1, random_state=42)",0.9908746344548337,0.8455328310010765,0.4574839836924869,0.5937263794406652,0.7642790095965056,0.5115827292869991,4.758768081665039
+Gradient Boosting,GradientBoostingClassifier(random_state=42),0.9912184272963027,0.8530781169167098,0.4801980198019802,0.6144959940376374,0.76469492638115,0.5146817020617656,17.58820390701294
+Neural Network,"MLPClassifier(hidden_layer_sizes=(100, 50), max_iter=1000, random_state=42)",0.9911420288870874,0.8369184592296148,0.4871869539895166,0.6158660040493282,0.7685701225880553,0.5210370041790358,32.89365005493164
+XGBoost,"XGBClassifier(base_score=None, booster=None, callbacks=None,
+              colsample_bylevel=None, colsample_bynode=None,
+              colsample_bytree=None, device=None, early_stopping_rounds=None,
+              enable_categorical=False, eval_metric='logloss',
+              feature_types=None, gamma=None, grow_policy=None,
+              importance_type=None, interaction_constraints=None,
+              learning_rate=None, max_bin=None, max_cat_threshold=None,
+              max_cat_to_onehot=None, max_delta_step=None, max_depth=None,
+              max_leaves=None, min_child_weight=None, missing=nan,
+              monotone_constraints=None, multi_strategy=None, n_estimators=100,
+              n_jobs=None, num_parallel_tree=None, random_state=42, ...)",0.9910359199853994,0.845350052246604,0.4711706464764123,0.6050860134629769,0.7673129652749425,0.5222051717342544,1.259023904800415
+LightGBM,"LGBMClassifier(random_state=42, verbosity=-1)",0.9911038296824797,0.8402848423194303,0.48107163657542223,0.6118518518518519,0.7666887125653478,0.5225781828063801,1.94645094871521

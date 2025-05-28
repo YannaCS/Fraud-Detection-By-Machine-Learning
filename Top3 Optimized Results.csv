@@ -1,0 +1,9 @@
+,Neural Network,Gradient Boosting,LightGBM
+model,"MLPClassifier(alpha=0.01, max_iter=1000, random_state=42)","GradientBoostingClassifier(learning_rate=0.05, max_depth=5,
+                           min_samples_split=20, n_estimators=500,
+                           random_state=42, subsample=0.8)","LGBMClassifier(bagging_fraction=0.8, bagging_freq=10, feature_fraction=1.0,
+               is_unbalance=True, learning_rate=0.01, max_depth=4,
+               n_estimators=500, random_state=42, verbosity=-1)"
+best_params,"{'activation': 'relu', 'alpha': 0.01, 'hidden_layer_sizes': (100,), 'learning_rate': 'constant', 'solver': 'adam'}","{'learning_rate': 0.05, 'max_depth': 5, 'min_samples_split': 20, 'n_estimators': 500, 'subsample': 0.8}","{'bagging_fraction': 0.8, 'bagging_freq': 10, 'feature_fraction': 1.0, 'learning_rate': 0.01, 'max_depth': 4, 'n_estimators': 500, 'num_leaves': 31}"
+cv_score,0.7716063949041617,0.7721070159820956,0.7723323075775402
+time_taken,12452.43071269989,12335.17368721962,35391.87643098831
