@@ -1,0 +1,17 @@
+,model,accuracy,precision,recall,f1,roc_auc,avg_precision,train_time
+Neural Network,"MLPClassifier(activation='tanh', alpha=0.005193342375301797, batch_size=128,
+              beta_1=0.9263118988687408, beta_2=0.9688731310938087,
+              hidden_layer_sizes=(177, 189, 100),
+              learning_rate_init=0.0018989348825044895, max_iter=266,
+              n_iter_no_change=9, tol=7.036266354341677e-05)",0.991392445895071,0.8450704225352113,0.49411764705882355,0.623608017817372,0.7678093120007783,0.49926208890510343,194.05725407600403
+Gradient Boosting,"GradientBoostingClassifier(learning_rate=0.13759853943681635,
+                           max_features=0.8996880122162721, min_samples_leaf=8,
+                           min_samples_split=17, n_estimators=549,
+                           n_iter_no_change=5, subsample=0.9654568616039398,
+                           validation_fraction=0.1221853105231159)",0.9913584910465308,0.8372898120672602,0.4979411764705882,0.6244928070822575,0.766073830803601,0.5162475451109946,10.483021020889282
+LightGBM,"LGBMClassifier(bagging_fraction=0.6491411484297266,
+               feature_fraction=0.8288945000643793, force_row_wise=True,
+               learning_rate=0.047678416454308495, max_depth=4,
+               min_child_samples=83, n_estimators=534, num_leaves=170,
+               reg_alpha=3.573435966837917e-07, reg_lambda=2.99825766085669e-05,
+               scale_pos_weight=3.3135707567325614)",0.9913584910465308,0.8210922787193974,0.5129411764705882,0.6314265025343954,0.766710778339509,0.5268523074404302,4.254631996154785

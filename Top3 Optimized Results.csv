@@ -1,9 +1,19 @@
 ,Neural Network,Gradient Boosting,LightGBM
-model,"MLPClassifier(alpha=0.01, max_iter=1000, random_state=42)","GradientBoostingClassifier(learning_rate=0.05, max_depth=5,
-                           min_samples_split=20, n_estimators=500,
-                           random_state=42, subsample=0.8)","LGBMClassifier(bagging_fraction=0.8, bagging_freq=10, feature_fraction=1.0,
-               is_unbalance=True, learning_rate=0.01, max_depth=4,
-               n_estimators=500, random_state=42, verbosity=-1)"
-best_params,"{'activation': 'relu', 'alpha': 0.01, 'hidden_layer_sizes': (100,), 'learning_rate': 'constant', 'solver': 'adam'}","{'learning_rate': 0.05, 'max_depth': 5, 'min_samples_split': 20, 'n_estimators': 500, 'subsample': 0.8}","{'bagging_fraction': 0.8, 'bagging_freq': 10, 'feature_fraction': 1.0, 'learning_rate': 0.01, 'max_depth': 4, 'n_estimators': 500, 'num_leaves': 31}"
-cv_score,0.7716063949041617,0.7721070159820956,0.7723323075775402
-time_taken,12452.43071269989,12335.17368721962,35391.87643098831
+model,"MLPClassifier(activation='tanh', alpha=0.005193342375301797, batch_size=128,
+              beta_1=0.9263118988687408, beta_2=0.9688731310938087,
+              hidden_layer_sizes=(177, 189, 100),
+              learning_rate_init=0.0018989348825044895, max_iter=266,
+              n_iter_no_change=9, tol=7.036266354341677e-05)","GradientBoostingClassifier(learning_rate=0.13759853943681635,
+                           max_features=0.8996880122162721, min_samples_leaf=8,
+                           min_samples_split=17, n_estimators=549,
+                           n_iter_no_change=5, subsample=0.9654568616039398,
+                           validation_fraction=0.1221853105231159)","LGBMClassifier(bagging_fraction=0.6491411484297266,
+               feature_fraction=0.8288945000643793, force_row_wise=True,
+               learning_rate=0.047678416454308495, max_depth=4,
+               min_child_samples=83, n_estimators=534, num_leaves=170,
+               reg_alpha=3.573435966837917e-07, reg_lambda=2.99825766085669e-05,
+               scale_pos_weight=3.3135707567325614)"
+best_params,"{'n_layers': 3, 'layer1_size': 177, 'layer2_size': 189, 'layer3_size': 100, 'alpha': 0.005193342375301797, 'learning_rate_init': 0.0018989348825044895, 'beta_1': 0.9263118988687408, 'beta_2': 0.9688731310938087, 'activation': 'tanh', 'batch_size': 128, 'max_iter': 266, 'n_iter_no_change': 9, 'tol': 7.036266354341677e-05}","{'n_estimators': 549, 'max_depth': 3, 'learning_rate': 0.13759853943681635, 'subsample': 0.9654568616039398, 'min_samples_split': 17, 'min_samples_leaf': 8, 'max_features': 0.8996880122162721, 'validation_fraction': 0.1221853105231159, 'n_iter_no_change': 5}","{'n_estimators': 534, 'max_depth': 4, 'learning_rate': 0.047678416454308495, 'num_leaves': 170, 'feature_fraction': 0.8288945000643793, 'bagging_fraction': 0.6491411484297266, 'scale_pos_weight': 3.3135707567325614, 'reg_alpha': 3.573435966837917e-07, 'reg_lambda': 2.99825766085669e-05, 'min_child_samples': 83}"
+best_score,0.6188038359261497,0.6160702881574748,0.627250173097987
+time_taken,3355.8913991451263,1064.992667913437,2263.486490726471
+study,<optuna.study.study.Study object at 0x17bbeee90>,<optuna.study.study.Study object at 0x17bb55890>,<optuna.study.study.Study object at 0x17bba8810>
