@@ -1,0 +1,32 @@
+,model,accuracy,precision,recall,f1,roc_auc,avg_precision,train_time
+Neural Network,"MLPClassifier(alpha=2.3959726000903904e-06, batch_size=256,
+              beta_1=0.9646623637926859, beta_2=0.9765885860431006,
+              hidden_layer_sizes=(236, 109, 81),
+              learning_rate_init=0.0003849807673802455, max_iter=1131,
+              tol=7.494074487538698e-06)",0.9911292958188849,0.8403275332650972,0.4801169590643275,0.6110904354298474,0.7637923444041891,0.5106271367119437,157.2439830303192
+XGBoost,"XGBClassifier(base_score=None, booster=None, callbacks=None,
+              colsample_bylevel=None, colsample_bynode=None,
+              colsample_bytree=0.9272855189355531, device=None,
+              early_stopping_rounds=None, enable_categorical=False,
+              eval_metric=None, feature_types=None, gamma=5.069237676853402e-07,
+              grow_policy=None, importance_type=None,
+              interaction_constraints=None, learning_rate=0.023185655454063106,
+              max_bin=None, max_cat_threshold=None, max_cat_to_onehot=None,
+              max_delta_step=None, max_depth=7, max_leaves=None,
+              min_child_weight=None, missing=nan, monotone_constraints=None,
+              multi_strategy=None, n_estimators=132, n_jobs=None,
+              num_parallel_tree=None, random_state=None, ...)",0.9911080740385473,0.8168340506934482,0.4994152046783626,0.619851206677554,0.7685860889955686,0.5158716570302587,2.2125449180603027
+LightGBM,"LGBMClassifier(bagging_fraction=0.7537781800057834, bagging_freq=1,
+               feature_fraction=0.5701898879549657, force_row_wise=True,
+               learning_rate=0.005751461733077047, max_depth=6,
+               min_child_samples=11, min_data_in_leaf=10,
+               min_split_gain=0.0003721924516595011,
+               min_sum_hessian_in_leaf=0.08578638229417121, n_estimators=120,
+               num_leaves=259, reg_alpha=9.10110924902125e-08,
+               reg_lambda=3.0585270732590106e-08,
+               scale_pos_weight=25.266422442015475)",0.9909892320686567,0.8839550029603316,0.4365497076023392,0.5844587981992562,0.7686654129131697,0.5142250929378541,2.0003418922424316
+Gradient Boosting,"GradientBoostingClassifier(learning_rate=0.0760356866954306,
+                           max_features=0.8203292592500988, min_samples_leaf=4,
+                           min_samples_split=7, n_estimators=559,
+                           n_iter_no_change=11, subsample=0.8133177132574361,
+                           validation_fraction=0.20357947581023378)",0.9910698748339396,0.8423517169614985,0.4733918128654971,0.6061400224634969,0.7608504174531433,0.5051503883697539,19.39796805381775

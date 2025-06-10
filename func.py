@@ -4,10 +4,19 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from math import ceil
 from typing import List, Optional, Tuple
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
+from IPython.display import display
 
+
+# Calculate individual feature's FDR (Fraud Detection Rate)
 def get_FDR(df):
     """
     Compute the max FDR between top 3% and bottom 3% values of each feature
+
+    Returns:
+    --------
+    pandas DataFrame: (index named feature, column named FDR)
     """
     num_bads = df['fraud_label'].sum()
     cut = int(round(len(df) * 0.03))
@@ -31,6 +40,16 @@ def get_FDR(df):
     results.sort_values(by='FDR', ascending=False, inplace=True)
     return results
     
+# Calculate model's FDR (Fraud Detection Rate)
+def calculate_fdr(X_data, predictions, labels, top_percent):
+    X_copy = X_data.copy() if hasattr(X_data, 'copy') else pd.DataFrame(X_data).copy()
+    X_copy['prediction'] = predictions
+    X_copy['fraud_label'] = labels
+    top_rows = int(round(X_copy.shape[0] * top_percent))
+    sorted_top_rows = X_copy.sort_values('prediction', ascending=False).head(top_rows)
+    fdr = sum(sorted_top_rows['fraud_label']) / sum(X_copy['fraud_label'])
+    return fdr
+
 
 def optimize_dtypes(df):
     """
@@ -402,352 +421,6 @@ def select_best_fraud_models(baseline_df, top_n=3,
     # Return scores with original index order
     return top_model_names, df['weighted_score']
 
-
-def compare_model(
-    baseline_df, optimized_df,
-    metrics_to_plot: Optional[List[str]] = None,
-    weights: Optional[dict] = None,
-    figure_size: Tuple[int, int] = (18, 8),
-    save_path: Optional[str] = None,
-    show_plots: bool = True,
-    return_summary: bool = False
-) -> Optional[pd.DataFrame]:
-    """
-    Compare baseline and optimized model performance with comprehensive visualizations.
-    
-    Parameters:
-    -----------
-    baseline_df : pd.DataFrame
-        DataFrame with baseline model results
-    optimized_df : pd.DataFrame
-        DataFrame with optimized model results
-    metrics_to_plot : list, optional
-        List of metrics to include in plots. If None, uses all available metrics
-    weights : dict, optional
-        Weights for each metric for weighted score calculation
-        Default: {'f1': 0.3, 'recall': 0.25, 'precision': 0.2, 'roc_auc': 0.15, 'accuracy': 0.1}
-    figure_size : tuple, optional
-        Figure size as (width, height). Default is (18, 12)   
-    save_path : str, optional
-        Path to save the figure. If None, figure is not saved    
-    show_plots : bool, optional
-        Whether to display the plots. Default is True   
-    return_summary : bool, optional
-        Whether to return a summary DataFrame. Default is False   
-    
-    Returns:
-    --------
-    pd.DataFrame or None
-        Summary DataFrame if return_summary is True, otherwise None
-    """
-    
-    # Define default metrics if not specified
-    if metrics_to_plot is None:
-        metrics_to_plot = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
-    
-    # Define default weights if not specified
-    if weights is None:
-        weights = {'f1': 0.3, 'recall': 0.25, 'precision': 0.2, 
-                  'roc_auc': 0.15, 'accuracy': 0.1}
-    
-    # Ensure all numeric columns are actually numeric
-    numeric_cols = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc', 'avg_precision', 'train_time']
-    for col in numeric_cols:
-        if col in baseline_df.columns:
-            baseline_df[col] = pd.to_numeric(baseline_df[col], errors='coerce')
-        if col in optimized_df.columns:
-            optimized_df[col] = pd.to_numeric(optimized_df[col], errors='coerce')
-    
-    # Merge for comparison
-    comparison_df = pd.merge(baseline_df, optimized_df, 
-                           left_index=True, right_index=True, 
-                           how='inner', 
-                           suffixes=('_baseline', '_optimized'))
-    comparison_df = comparison_df.reset_index().rename(columns={'index': 'model'})
-    
-    # Create consistent color mapping using Set3 colormap (same as plot_model_comparison)
-    models = comparison_df['model'].tolist()
-    colors = plt.cm.Set3(np.linspace(0, 1, len(models)))
-    color_map = dict(zip(models, colors))
-    
-    # Calculate number of subplots needed
-    n_metrics = len(metrics_to_plot)
-    n_cols = 3
-    # Total plots: n_metrics + train_time + weighted_score + heatmap
-    total_plots = n_metrics + 3
-    n_rows = (total_plots + n_cols - 1) // n_cols  # Ceiling division
-    
-    # Calculate appropriate figure height - about 3.5 inches per row
-    row_height = 3.5  # inches per row
-    adjusted_height = n_rows * row_height
-    
-    # Create figure with gridspec for better control
-    fig = plt.figure(figsize=(figure_size[0], adjusted_height))
-    gs = fig.add_gridspec(n_rows, n_cols, hspace=0.3, wspace=0.3)
-    
-    # Create axes using gridspec
-    axes = []
-    for i in range(n_rows):
-        for j in range(n_cols):
-            if i * n_cols + j < total_plots:
-                axes.append(fig.add_subplot(gs[i, j]))
-    
-    # Ensure we have enough axes
-    if len(axes) < total_plots:
-        raise ValueError(f"Not enough subplots. Need {total_plots}, but only have {len(axes)}")
-    
-    fig.suptitle('Model Performance Changes: Baseline vs Optimized', fontsize=12, fontweight='bold', y=0.98)
-    
-    # Plot change bars for each metric
-    plot_idx = 0
-    for metric in metrics_to_plot:
-        ax = axes[plot_idx]
-        
-        # Get data for this metric
-        baseline_values = comparison_df[f'{metric}_baseline']
-        optimized_values = comparison_df[f'{metric}_optimized']
-        changes = optimized_values - baseline_values
-        
-        x_pos = np.arange(len(models))
-        width = 0.35
-        
-        # Plot baseline and optimized bars with model-specific colors
-        for i, model in enumerate(models):
-            ax.bar(i - width/2, baseline_values.iloc[i], width, 
-                   color=color_map[model], alpha=0.6, 
-                   edgecolor='black', linewidth=1)
-            ax.bar(i + width/2, optimized_values.iloc[i], width, 
-                   color=color_map[model], alpha=0.9, 
-                   edgecolor='black', linewidth=1, hatch='///')
-        
-        # Add change values as text above bars
-        for i, (base, opt, change) in enumerate(zip(baseline_values, optimized_values, changes)):
-            y_pos = max(base, opt) + 0.002
-            change_color = '#27ae60' if change > 0 else '#e74c3c' if change < 0 else '#7f8c8d'
-            ax.text(i, y_pos, f'{change:+.4f}', 
-                    ha='center', va='bottom', fontsize=9, fontweight='bold',
-                    color=change_color)
-        
-        #ax.set_xlabel('Model')
-        ax.set_ylabel(f'{metric.capitalize()} Score')
-        ax.set_title(f'{metric.capitalize()} Comparison')
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(models, rotation=0, ha='center')
-        ax.grid(axis='y', alpha=0.3)
-        
-        # Set y-axis limits with some padding
-        y_min = min(baseline_values.min(), optimized_values.min()) * 0.95
-        y_max = max(baseline_values.max(), optimized_values.max()) * 1.05
-        ax.set_ylim(y_min, y_max)
-        
-        plot_idx += 1
-    
-    # Plot training time change
-    ax = axes[plot_idx]
-    baseline_times = comparison_df['train_time_baseline']
-    optimized_times = comparison_df['train_time_optimized']
-    time_changes = optimized_times - baseline_times
-    
-    x_pos = np.arange(len(models))
-    width = 0.35
-    
-    # Plot baseline and optimized bars with model-specific colors
-    for i, model in enumerate(models):
-        ax.bar(i - width/2, baseline_times.iloc[i], width, 
-               color=color_map[model], alpha=0.6, 
-               edgecolor='black', linewidth=1)
-        ax.bar(i + width/2, optimized_times.iloc[i], width, 
-               color=color_map[model], alpha=0.9, 
-               edgecolor='black', linewidth=1, hatch='///')
-    
-    # Add change values and time labels
-    for i, (base, opt, change) in enumerate(zip(baseline_times, optimized_times, time_changes)):
-        # Add time values on bars
-        ax.text(x_pos[i] - width/2, base, f'{base:.1f}s', 
-                ha='center', va='bottom', fontsize=8)
-        ax.text(x_pos[i] + width/2, opt, f'{opt:.1f}s', 
-                ha='center', va='bottom', fontsize=8)
-        
-        # Add change value above
-        y_pos = max(base, opt) * 1.1
-        change_color = '#e74c3c' if change > 0 else '#27ae60'
-        ax.text(i, y_pos, f'{change:+.1f}s', 
-                ha='center', va='bottom', fontsize=9, fontweight='bold',
-                color=change_color)
-    
-    #ax.set_xlabel('Model')
-    ax.set_ylabel('Training Time (seconds, log scale)')
-    ax.set_title('Training Time Comparison')
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels(models, rotation=0, ha='center')
-    ax.set_yscale('log')
-    ax.grid(axis='y', alpha=0.3, which='both')
-    plot_idx += 1
-    
-    # Plot weighted score change
-    ax = axes[plot_idx]
-    
-    # Calculate weighted scores for baseline and optimized
-    baseline_scores = []
-    optimized_scores = []
-    
-    for _, row in comparison_df.iterrows():
-        baseline_score = 0
-        optimized_score = 0
-        
-        for metric, weight in weights.items():
-            if f'{metric}_baseline' in row and f'{metric}_optimized' in row:
-                baseline_score += row[f'{metric}_baseline'] * weight
-                optimized_score += row[f'{metric}_optimized'] * weight
-        
-        baseline_scores.append(baseline_score)
-        optimized_scores.append(optimized_score)
-    
-    baseline_scores = np.array(baseline_scores)
-    optimized_scores = np.array(optimized_scores)
-    changes = optimized_scores - baseline_scores
-    
-    x_pos = np.arange(len(models))
-    width = 0.35
-    
-    # Plot baseline and optimized bars with model-specific colors
-    for i, model in enumerate(models):
-        ax.bar(i - width/2, baseline_scores[i], width, 
-               color=color_map[model], alpha=0.6, 
-               edgecolor='black', linewidth=1)
-        ax.bar(i + width/2, optimized_scores[i], width, 
-               color=color_map[model], alpha=0.9, 
-               edgecolor='black', linewidth=1, hatch='///')
-    
-    # Add change values as text above bars
-    for i, (base, opt, change) in enumerate(zip(baseline_scores, optimized_scores, changes)):
-        y_pos = max(base, opt) + 0.002
-        change_color = '#27ae60' if change > 0 else '#e74c3c' if change < 0 else '#7f8c8d'
-        ax.text(i, y_pos, f'{change:+.4f}', 
-                ha='center', va='bottom', fontsize=9, fontweight='bold',
-                color=change_color)
-        
-        # Add score values on bars
-        ax.text(x_pos[i] - width/2, base/2, f'{base:.3f}', 
-                ha='center', va='center', fontsize=8, color='white', fontweight='bold')
-        ax.text(x_pos[i] + width/2, opt/2, f'{opt:.3f}', 
-                ha='center', va='center', fontsize=8, color='white', fontweight='bold')
-    
-    ax.set_xlabel('Model')
-    ax.set_ylabel('Weighted Score')
-    ax.set_title('Overall Weighted Score Comparison',
-                 fontsize=12, fontweight='bold')
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels(models, rotation=0, ha='center')
-    ax.grid(axis='y', alpha=0.3)
-    
-    # Set y-axis limits with some padding
-    y_min = min(baseline_scores.min(), optimized_scores.min()) * 0.95
-    y_max = max(baseline_scores.max(), optimized_scores.max()) * 1.05
-    ax.set_ylim(y_min, y_max)
-    plot_idx += 1
-    
-    # Plot performance heatmap
-    ax = axes[plot_idx]
-    
-    # Calculate percentage changes
-    changes = []
-    model_names = comparison_df['model'].tolist()
-    
-    # Include training time in the heatmap
-    for metric in metrics_to_plot:
-        metric_changes = []
-        for _, row in comparison_df.iterrows():
-            baseline_val = row[f'{metric}_baseline']
-            optimized_val = row[f'{metric}_optimized']
-            if baseline_val != 0:
-                pct_change = ((optimized_val - baseline_val) / baseline_val) * 100
-            else:
-                pct_change = 0
-            metric_changes.append(pct_change)
-        changes.append(metric_changes)
-    
-    # Create heatmap
-    changes_array = np.array(changes)
-    
-    # Use diverging colormap centered at 0
-    vmax = np.abs(changes_array).max()
-    im = ax.imshow(changes_array, cmap='RdYlGn', aspect='auto', 
-                   alpha=0.8, vmin=-vmax, vmax=vmax)
-    
-    # Set ticks and labels
-    ax.set_xticks(np.arange(len(model_names)))
-    ax.set_yticks(np.arange(len(metrics_to_plot)))
-    ax.set_xticklabels(model_names, rotation=0, ha='center')
-    ax.set_yticklabels([m.replace('_', ' ').capitalize() for m in metrics_to_plot])
-    
-    # Add text annotations
-    for i in range(len(metrics_to_plot)):
-        for j in range(len(model_names)):
-            value = changes_array[i, j]
-            text_color = 'white' if abs(value) > vmax * 0.6 else 'black'
-            text = ax.text(j, i, f'{value:.1f}%',
-                          ha='center', va='center', fontsize=9, 
-                          fontweight='bold', color=text_color)
-    
-    # Add colorbar
-    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.set_label('% Change', rotation=270, labelpad=15)
-    
-    ax.set_title('Performance Changes Heatmap (%)')
-    ax.grid(False)
-    
-    # Add both legends in a single row at the bottom
-    from matplotlib.patches import Patch
-    
-    # Combine model rectangles and baseline/optimized patches
-    all_handles = []
-    all_labels = []
-    
-    # Add model color rectangles
-    for model in models:
-        all_handles.append(plt.Rectangle((0,0),1,1, fc=color_map[model], alpha=0.8))
-        all_labels.append(model)
-    
-    # Add separator
-    all_handles.append(plt.Rectangle((0,0),0,0, alpha=0))  # Invisible spacer
-    all_labels.append('')
-    
-    # Add baseline/optimized indicators
-    all_handles.extend([Patch(facecolor='gray', alpha=0.6, label='Baseline'),
-                       Patch(facecolor='gray', alpha=0.9, hatch='///', label='Optimized')])
-    all_labels.extend(['Baseline', 'Optimized'])
-    
-    # Create single combined legend at the very bottom of the figure
-    fig.legend(all_handles, all_labels, loc='lower center', 
-              ncol=len(models) + 3,  # models + spacer + 2 indicators
-              frameon=True, fancybox=True, shadow=True,
-              bbox_to_anchor=(0.5, 0.02))
-    
-    # Adjust to ensure we use the full figure
-    # plt.subplots_adjust(top=0.93, bottom=0.08)
-    # Use tight_layout with rect parameter to leave space for legend
-    plt.tight_layout(rect=[0, 0.05, 1, 0.95])
-    
-    # Save figure if path provided
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Figure saved to: {save_path}")
-    
-    # Show plots if requested
-    if show_plots:
-        plt.show()
-    else:
-        plt.close()
-    
-    # Generate and optionally return summary
-    if return_summary:
-        summary_df = generate_summary(comparison_df, metrics_to_plot, weights)
-        return summary_df
-    
-    #return None
-
-
 def generate_summary(comparison_df, metrics, weights):
     """Generate detailed summary statistics."""
     print("\nPERFORMANCE IMPROVEMENT SUMMARY")
@@ -854,3 +527,1000 @@ def generate_summary(comparison_df, metrics, weights):
               f"({weighted_row['improvement']:+.4f}, {weighted_row['pct_improvement']:+.2f}%)")
     
     return summary_df
+
+
+def compare_performance(
+    baseline_df, optimized_df,
+    metrics: Optional[List[str]] = None,
+    figure_size: Tuple[int, int] = (22, 12),
+    save_path: Optional[str] = None,
+    show_plots: bool = True,
+    return_summary: bool = False
+) -> Optional[pd.DataFrame]:
+    """
+    Compare baseline and optimized model performance with comprehensive visualizations.
+    
+    Parameters:
+    -----------
+    baseline_df : pd.DataFrame
+        DataFrame with baseline model results
+    optimized_df : pd.DataFrame
+        DataFrame with optimized model results
+    metrics_to_plot : list, optional
+        List of metrics to include in plots. If None, uses all available metrics
+    figure_size : tuple, optional
+        Figure size as (width, height). Default is (18, 12)   
+    save_path : str, optional
+        Path to save the figure. If None, figure is not saved    
+    show_plots : bool, optional
+        Whether to display the plots. Default is True   
+    return_summary : bool, optional
+        Whether to return a summary DataFrame. Default is False    
+    Returns:
+    --------
+    pd.DataFrame or None
+        Summary DataFrame if return_summary is True, otherwise None
+    """
+    
+    # Define default metrics if not specified
+    if metrics is None:
+        metrics = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc','avg_precision']
+    # make a copy of the original df
+    baseline_df = baseline_df.copy()
+    optimized_df = optimized_df.copy()
+    
+    # Ensure all numeric columns are actually numeric
+    numeric_cols = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc', 'avg_precision', 'train_time']
+    for col in numeric_cols:
+        if col in baseline_df.columns:
+            baseline_df[col] = pd.to_numeric(baseline_df[col], errors='coerce')
+        if col in optimized_df.columns:
+            optimized_df[col] = pd.to_numeric(optimized_df[col], errors='coerce')
+    
+    # Get models that exist in both dataframes
+    common_models = baseline_df.index.intersection(optimized_df.index)
+
+    # Create figure with subplots
+    fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=figure_size,
+                                   gridspec_kw={'wspace': 0.25, 
+                                                'width_ratios': [3, 1]
+                                               })
+
+
+    # Dumbbell plot
+    # Flatten data for plotting
+    plot_data = []
+    for model in common_models:
+        for metric in metrics:
+            plot_data.append({
+                'model': model,
+                'metric': metric,
+                'baseline': baseline_df.loc[model, metric],
+                'optimized': optimized_df.loc[model, metric]
+            })
+    
+    plot_df = pd.DataFrame(plot_data)
+    
+    # Calculate improvement percentage
+    plot_df['improvement'] = ((plot_df['optimized'] - plot_df['baseline']) / plot_df['baseline']) * 100
+    plot_df['abs_improvement'] = plot_df['optimized'] - plot_df['baseline']
+    
+    # Create labels
+    plot_df['label'] = plot_df['model'] + ' - ' + plot_df['metric'].str.replace('_', ' ').str.title()
+    
+    # Sort by model first, then by improvement within each model
+    available_models = list(common_models)
+    plot_df['model_order'] = pd.Categorical(plot_df['model'], categories=available_models)
+    plot_df = plot_df.sort_values(['model_order', 'improvement'], ascending=[True, False])
+    
+    # Create y positions with grouping
+    models = available_models
+    y_positions = []
+    y_labels = []
+    y_pos = 0
+    model_boundaries = []
+    
+    for model in models:
+        model_data = plot_df[plot_df['model'] == model]
+        model_boundaries.append(y_pos)
+        
+        for _, row in model_data.iterrows():
+            y_positions.append(y_pos)
+            y_labels.append(row['label'])
+            y_pos += 1
+        
+        # Add spacing between models
+        y_pos += 0.5
+    
+    # Plot horizontal lines with extensions
+    for i, row in enumerate(plot_df.itertuples()):
+        y = y_positions[i]
+        
+        # Color lines based on improvement
+        line_color = '#2ecc71' if row.abs_improvement >= 0 else '#e74c3c'
+        
+        # Calculate line extension for visibility
+        min_val = min(row.baseline, row.optimized)
+        max_val = max(row.baseline, row.optimized)
+        line_length = max_val - min_val
+        
+        # Ensure minimum line length for visibility
+        min_line_length = 0.02
+        if line_length < min_line_length:
+            midpoint = (min_val + max_val) / 2
+            min_val = midpoint - min_line_length / 2
+            max_val = midpoint + min_line_length / 2
+        
+        # Draw main connecting line
+        ax1.plot([min_val, max_val], [y, y], 
+                color=line_color, alpha=0.8, linewidth=4, 
+                solid_capstyle='round')
+        
+        # Add subtle extended guide line
+        extend_factor = 0.015
+        ax1.plot([min_val - extend_factor, max_val + extend_factor], [y, y], 
+                color=line_color, alpha=0.2, linewidth=2, 
+                linestyle='--')
+    
+    # Plot dots
+    baseline_scatter = ax1.scatter(plot_df['baseline'], y_positions, 
+                                 color='#3498db', label='Baseline', s=100, 
+                                 edgecolors='white', linewidth=2, zorder=3)
+    optimized_scatter = ax1.scatter(plot_df['optimized'], y_positions, 
+                                  color='#2ecc71', label='Optimized', s=100,
+                                  edgecolors='white', linewidth=2, zorder=3)
+    
+    # Add directional arrows for very small changes
+    for i, row in enumerate(plot_df.itertuples()):
+        y = y_positions[i]
+        if abs(row.abs_improvement) < 0.005:
+            if row.abs_improvement > 0:
+                arrow_props = dict(arrowstyle='->', color='#2ecc71', lw=2, alpha=0.6)
+                ax1.annotate('', xy=(row.optimized + 0.01, y), 
+                           xytext=(row.baseline, y),
+                           arrowprops=arrow_props)
+            elif row.abs_improvement < 0:
+                arrow_props = dict(arrowstyle='->', color='#e74c3c', lw=2, alpha=0.6)
+                ax1.annotate('', xy=(row.optimized - 0.01, y), 
+                           xytext=(row.baseline, y),
+                           arrowprops=arrow_props)
+    
+    # Add annotations
+    for i, row in enumerate(plot_df.itertuples()):
+        y = y_positions[i]
+        delta = row.abs_improvement
+        pct_change = row.improvement
+        
+        # Position text
+        if delta >= 0:
+            x_pos = max(row.baseline, row.optimized) + 0.015
+            ha = 'left'
+        else:
+            x_pos = min(row.baseline, row.optimized) - 0.015
+            ha = 'right'
+        
+        # Format annotation
+        if abs(pct_change) >= 1:
+            annotation = f"{delta:+.3f}\n({pct_change:+.1f}%)"
+            fontsize = 10
+        else:
+            annotation = f"{delta:+.3f}"
+            fontsize = 9
+        
+        if abs(delta) < 0.005:
+            fontsize = 11
+            fontweight = 'heavy'
+        else:
+            fontweight = 'bold'
+        
+        #line_color = '#2ecc71' if delta >= 0 else '#e74c3c'
+        line_color = None if delta >= 0 else '#e74c3c'
+        ax1.text(x_pos, y, annotation, 
+                va='center', ha=ha,
+                color=line_color, 
+                fontsize=fontsize, fontweight=fontweight,
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='white', 
+                         edgecolor=line_color, linewidth=1.5, alpha=0.9))
+    
+    # Add visual emphasis for significant changes
+    for i, row in enumerate(plot_df.itertuples()):
+        y = y_positions[i]
+        if abs(row.improvement) >= 2:
+            if row.improvement > 0:
+                ax1.scatter(row.optimized, y, s=150, marker='*', 
+                          color='gold', edgecolor='#2ecc71', linewidth=2, zorder=4)
+            else:
+                ax1.scatter(row.optimized, y, s=150, marker='X', 
+                          color='orange', edgecolor='#e74c3c', linewidth=2, zorder=4)
+    
+    # Add model group labels
+    for i, (model, boundary) in enumerate(zip(models, model_boundaries)):
+        ax1.text(-0.06, boundary, model, transform=ax1.get_yaxis_transform(),
+                fontsize=11, fontweight='bold', ha='right', va='top',
+                color='#34495e')
+    
+    # Customize axes
+    ax1.set_yticks(y_positions)
+    ax1.set_yticklabels([label.split(' - ')[1] for label in y_labels], fontsize=10)
+    ax1.invert_yaxis()
+    
+    # Add vertical lines at thresholds
+    for threshold in [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
+        ax1.axvline(threshold, color='gray', linestyle=':', alpha=0.3, linewidth=0.8)
+    
+    # Labels and title
+    ax1.set_xlabel('Score', fontsize=12, fontweight='bold')
+    #ax1.set_ylabel('Metrics', fontsize=12, fontweight='bold')
+    ax1.set_title('Model Performance Comparison: Baseline vs Optimized\n', 
+                 fontsize=16, fontweight='bold', color='#2c3e50')
+    
+    # Add subtitle
+    total_metrics = len(plot_df)
+    improved = len(plot_df[plot_df['abs_improvement'] > 0])
+    degraded = len(plot_df[plot_df['abs_improvement'] < 0])
+    ax1.text(0.5, 1.02, f'Improved: {improved}/{total_metrics} | Degraded: {degraded}/{total_metrics}', 
+            transform=ax1.transAxes, ha='center', fontsize=10, color='#7f8c8d')
+    
+    # Legend
+    legend = ax1.legend(loc='lower right', frameon=True, shadow=True, 
+                       fancybox=True, framealpha=0.9)
+    legend.get_frame().set_facecolor('white')
+    
+    # Grid
+    ax1.grid(axis='x', linestyle='--', alpha=0.3, color='gray')
+    ax1.set_axisbelow(True)
+    
+    # Set x-axis limits
+    x_min = min(plot_df['baseline'].min(), plot_df['optimized'].min()) - 0.05
+    x_max = max(plot_df['baseline'].max(), plot_df['optimized'].max()) + 0.15
+    ax1.set_xlim(x_min, x_max)
+    
+    # Add background shading
+    for i in range(len(model_boundaries)):
+        if i < len(model_boundaries) - 1:
+            y_start = model_boundaries[i] - 0.5
+            y_end = model_boundaries[i+1] - 1
+        else:
+            y_start = model_boundaries[i] - 0.5
+            y_end = y_positions[-1] + 0.5
+        
+        if i % 2 == 0:
+            ax1.axhspan(y_start, y_end, facecolor='gray', alpha=0.05)
+    
+    # Remove spines
+    ax1.spines['top'].set_visible(False)
+    ax1.spines['right'].set_visible(False)
+    
+    # Right subplot for the heatmap
+    # Calculate percentage changes directly
+    heatmap_data = {}
+    for model in common_models:
+        model_changes = []
+        for metric in metrics:
+            baseline_val = baseline_df.loc[model, metric]
+            optimized_val = optimized_df.loc[model, metric]
+            pct_change = ((optimized_val - baseline_val) / baseline_val) * 100
+            model_changes.append(pct_change)
+        heatmap_data[model] = model_changes
+    
+    # Create DataFrame for heatmap
+    heatmap_df = pd.DataFrame(heatmap_data, 
+                             index=[m.replace('_', ' ').title() for m in metrics]).T
+    heatmap_df = heatmap_df.loc[available_models]  # Keep same order as left plot
+    
+    # Create custom colormap
+    max_abs_change = max(abs(heatmap_df.min().min()), abs(heatmap_df.max().max()))
+    cmap = sns.diverging_palette(10, 130, as_cmap=True)  # Red to Green
+    
+    # Create heatmap
+    sns.heatmap(heatmap_df.T, 
+                annot=True, 
+                fmt='.2f',
+                cmap=cmap,
+                center=0,
+                vmin=-max_abs_change,
+                vmax=max_abs_change,
+                cbar_kws={'label': 'Percentage Change (%)', 'pad': 0.01, 'shrink': 0.7},
+                linewidths=0.5,
+                linecolor='gray',
+                square=True,
+                ax=ax2,
+                annot_kws={'fontsize': 10, 'fontweight': 'bold'})
+    
+    # Customize heatmap
+    ax2.set_title('Performance Change Heatmap\n(% Change from Baseline)', 
+                  fontsize=16, fontweight='bold', color='#2c3e50', pad=20)
+    #ax2.set_ylabel('Metrics',fontsize=12, fontweight='bold')
+    ax2.set_xlabel('Model', fontsize=12, fontweight='bold')
+    
+    # Rotate labels
+    ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha='right')
+    ax2.set_yticklabels(ax2.get_yticklabels(), rotation=0)
+    
+    # Add borders for significant changes
+    for i, model in enumerate(heatmap_df.index):
+        for j, metric in enumerate(heatmap_df.columns):
+            value = heatmap_df.loc[model, metric]
+            if abs(value) >= 2:
+                rect = plt.Rectangle((j, i), 1, 1, fill=False, 
+                                   edgecolor='yellow' if value > 0 else 'orange', 
+                                   linewidth=3, zorder=3)
+                ax2.add_patch(rect)
+    
+    # Add summary statistics
+    avg_change_per_model = heatmap_df.mean(axis=1)
+    best_model = avg_change_per_model.idxmax()
+    worst_model = avg_change_per_model.idxmin()
+    
+    summary_text = f"Best Overall: {best_model} ({avg_change_per_model[best_model]:.2f}%)\n"
+    summary_text += f"Worst Overall: {worst_model} ({avg_change_per_model[worst_model]:.2f}%)"
+    ax2.text(0.5, -0.25, summary_text, transform=ax2.transAxes, 
+             ha='center', va='top', fontsize=10, 
+             bbox=dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5))
+    
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    if show_plots:
+        plt.show()
+    else:
+        plt.close()
+
+    
+    
+    # Create a detailed summary table
+    summary_data = []
+    for model in available_models:
+        model_df = plot_df[plot_df['model'] == model]
+        summary_data.append({
+            'Model': model,
+            'Metrics Improved': len(model_df[model_df['abs_improvement'] > 0]),
+            'Metrics Degraded': len(model_df[model_df['abs_improvement'] < 0]),
+            'Avg Change': f"{model_df['improvement'].mean():.2f}%",
+            'Best Improvement': f"{model_df.loc[model_df['improvement'].idxmax(), 'metric']} "
+                               f"(+{model_df['improvement'].max():.2f}%)",
+            'Worst Change': f"{model_df.loc[model_df['improvement'].idxmin(), 'metric']} "
+                           f"({model_df['improvement'].min():.2f}%)"
+        })
+    
+    summary_df = pd.DataFrame(summary_data)
+    print("\nModel Performance Summary:")
+    print(summary_df.to_string(index=False))
+    if return_summary:
+        return summary_df
+
+
+
+
+
+
+
+
+
+def evaluate_model_goodness(
+    model, whole_dataset, model_name="Model",
+    test_size=0.2, 
+    top_percent=0.03, 
+    niter_max=5, 
+    display_confusion_matrices=False
+):
+    """
+    Evaluate a model's performance across multiple iterations with train/test/oot splits.
+    
+    Parameters:
+    -----------
+    model : sklearn classifier
+        Fitted or unfitted sklearn classifier with fit() and predict_proba() methods
+    X : pd.DataFrame or np.array
+        Feature matrix for training/testing
+    y : pd.Series or np.array
+        Target labels for training/testing
+    oot : pd.DataFrame or np.array
+        Out-of-time feature matrix
+    oot_label : pd.Series or np.array
+        Out-of-time target labels
+    model_name : str
+        Name of the model for display purposes
+    test_size : float
+        Proportion of data to use for test set
+    top_percent : float
+        Top percentage for FDR calculation (default 3%)
+    niter_max : int
+        Number of iterations to run
+    display_confusion_matrices : bool
+        Whether to display confusion matrices for each iteration
+    
+    Returns:
+    --------
+    pd.DataFrame : Summary of model goodness metrics averaged across iterations
+    dict : Detailed metrics for each iteration
+    """
+    
+    # Initialize storage for metrics
+    metrics_list = ['FDR', 'KS', 'AUC', 'THR', 'ACC', 'MIS', 'FPR', 'TPR', 'TNR', 'PRE']
+    splits = ['train', 'test', 'oot']
+
+    metrics = {
+        metric: {split: np.zeros(niter_max) for split in splits}
+        for metric in metrics_list
+    }
+    # Split data
+    total = int(round(whole_dataset.shape[0]*0.8))
+    X = whole_dataset.drop(['fraud_label'], axis=1)
+    y = whole_dataset.fraud_label
+    oot = X[total:]
+    oot_label = y[total:]
+    X = X[0:total]
+    y = y[0:total]
+    
+    print(f"Evaluating {model_name} performance over {niter_max} iterations...\n")
+    
+    for niter in range(niter_max):     
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=niter)
+        
+        # Clone model to avoid modifying the original
+        from sklearn.base import clone
+        model_iter = clone(model)
+        
+        # Fit model
+        model_iter.fit(X_train, y_train)
+        
+        # Get predictions
+        prediction_train = model_iter.predict_proba(X_train)[:, 1]
+        prediction_test = model_iter.predict_proba(X_test)[:, 1]
+        prediction_oot = model_iter.predict_proba(oot)[:, 1]
+        
+        pre_train = model_iter.predict(X_train)
+        pre_test = model_iter.predict(X_test)
+        pre_oot = model_iter.predict(oot)
+        
+        # Get model FDR
+        metrics['FDR']['train'][niter] = calculate_fdr(X_train, prediction_train, y_train, top_percent)
+        metrics['FDR']['test'][niter] = calculate_fdr(X_test, prediction_test, y_test, top_percent)
+        metrics['FDR']['oot'][niter] = calculate_fdr(oot, prediction_oot, oot_label, top_percent)
+        
+        # Calculate confusion matrix metrics
+        def calculate_cm_metrics(y_true, y_pred, dataset_name):
+            tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+            
+            if display_confusion_matrices:
+                cm = pd.DataFrame([[tn, fp], [fn, tp]], 
+                                index=['Actual Good', 'Actual Bad'],
+                                columns=['Predicted Good', 'Predicted Bad'])
+                display(f'Confusion Matrix for {dataset_name} set iteration {niter}:')
+                display(cm)
+            
+            return {
+                'ACC': (tp + tn) / (tp + tn + fp + fn),
+                'MIS': (fp + fn) / (tp + tn + fp + fn),
+                'FPR': fp / (fp + tn) if (fp + tn) > 0 else 0,
+                'TPR': tp / (tp + fn) if (tp + fn) > 0 else 0,
+                'TNR': tn / (tn + fp) if (tn + fp) > 0 else 0,
+                'PRE': tp / (tp + fp) if (tp + fp) > 0 else 0
+            }
+        
+        # Calculate metrics for each dataset
+        for dataset, y_true, y_pred in [('train', y_train, pre_train), 
+                                        ('test', y_test, pre_test), 
+                                        ('oot', oot_label, pre_oot)]:
+            cm_metrics = calculate_cm_metrics(y_true, y_pred, dataset)
+            for metric, value in cm_metrics.items():
+                metrics[metric][dataset][niter] = value
+        
+        # Calculate ROC/AUC and KS
+        def calculate_roc_ks_metrics(y_true, y_pred_proba):
+            fpr, tpr, thresholds = roc_curve(y_true, y_pred_proba)
+            auc = roc_auc_score(y_true, y_pred_proba)
+            
+            # Calculate KS (Kolmogorov-Smirnov)
+            ks_values = tpr - fpr
+            ks_max_idx = np.argmax(ks_values)
+            ks_max = ks_values[ks_max_idx]
+            best_threshold = thresholds[ks_max_idx]
+            
+            return auc, ks_max, best_threshold
+        
+        # for each dataset
+        for dataset, y_true, y_pred_proba in [('train', y_train, prediction_train),
+                                              ('test', y_test, prediction_test),
+                                              ('oot', oot_label, prediction_oot)]:
+            auc, ks, threshold = calculate_roc_ks_metrics(y_true, y_pred_proba)
+            metrics['AUC'][dataset][niter] = round(auc, 4)
+            metrics['KS'][dataset][niter] = round(ks, 4)
+            metrics['THR'][dataset][niter] = round(threshold, 4)
+    
+    # Calculate average metrics
+    goodness_df = pd.DataFrame(
+        index=['FDR', 'KS', 'AUC', 'Thresholds', 'Accuracy', 'Misclassification', 
+               'False Positive Rate', 'True Positive Rate', 'True Negative Rate', 'Precision'],
+        columns=['train', 'test', 'oot']
+    )
+    
+    metric_mapping = {
+        'FDR': 'FDR',
+        'KS': 'KS', 
+        'AUC': 'AUC',
+        'Thresholds': 'THR',
+        'Accuracy': 'ACC',
+        'Misclassification': 'MIS',
+        'False Positive Rate': 'FPR',
+        'True Positive Rate': 'TPR', # aka sensitivity/recall
+        'True Negative Rate': 'TNR', # aka specificity/selectivity
+        'Precision': 'PRE'
+    }
+    
+    for display_name, metric_key in metric_mapping.items():
+        goodness_df.loc[display_name] = [
+            round(metrics[metric_key]['train'].mean(), 4),
+            round(metrics[metric_key]['test'].mean(), 4),
+            round(metrics[metric_key]['oot'].mean(), 4)
+        ]
+    
+    print(f"\n{model_name} Goodness Summary (Average over {niter_max} iterations):")
+    display(goodness_df)
+    
+    # Add standard deviations for key metrics
+    print("\nKey Metrics Stability (Standard Deviation):")
+    stability_metrics = ['AUC', 'KS', 'FDR', 'ACC', 'PRE']
+    stability_df = pd.DataFrame(
+        index=stability_metrics,
+        columns=['train_std', 'test_std', 'oot_std']
+    )
+    
+    for metric in stability_metrics:
+        stability_df.loc[metric] = [
+            round(metrics[metric]['train'].std(), 4),
+            round(metrics[metric]['test'].std(), 4),
+            round(metrics[metric]['oot'].std(), 4)
+        ]
+    
+    display(stability_df)
+    
+    return goodness_df, metrics
+# Example usage:
+"""
+# Define your model
+model = GradientBoostingClassifier(...)
+
+# Evaluate model
+goodness_summary, detailed_metrics = evaluate_model_goodness(
+    model=model, whole_dataset, model_name="Gradient Boosting",
+    test_size=0.2, top_percent=0.03, niter_max=5,
+    display_confusion_matrices=False
+)
+
+# Access specific metrics if needed
+print(f"Average test AUC: {detailed_metrics['AUC']['test'].mean():.4f}")
+print(f"Test AUC range: [{detailed_metrics['AUC']['test'].min():.4f}, {detailed_metrics['AUC']['test'].max():.4f}]")
+"""
+
+
+
+
+def calculate_performance_forms(model, whole_dataset, n_bins=20, model_name="Model"):
+    """
+    Calculate performance forms (train/test/oot) with binned predictions and create visualizations.
+    
+    Parameters:
+    -----------
+    model : sklearn classifier
+        Fitted model with predict_proba method
+    X_train, y_train : array-like
+        Training data and labels
+    X_test, y_test : array-like
+        Test data and labels
+    X_oot, y_oot : array-like
+        Out-of-time data and labels
+    n_bins : int
+        Number of bins for population segmentation (default: 20)
+    model_name : str
+        Name of the model for display
+    
+    Returns:
+    --------
+    dict : Dictionary containing train_form, test_form, oot_form DataFrames
+    """
+    total = int(round(whole_dataset.shape[0]*0.8))
+    X = whole_dataset.drop(['fraud_label'], axis=1)
+    y = whole_dataset.fraud_label
+    X_oot = X[total:]
+    y_oot = y[total:]
+    X = X[0:total]
+    y = y[0:total]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
+    model.fit(X_train, y_train)
+             
+    # Initialize forms
+    columns = ['pop_bin', 'bin_records', 'bin_goods', 'bin_bads', 'bin_%good', 'bin_%bad',
+               'cum_records', 'cum_goods', 'cum_bads', 'cum_%good', 'cum_%bad_FDR', 'KS', 'FPR']
+    
+    train_form = pd.DataFrame(np.zeros((n_bins, len(columns))), columns=columns)
+    test_form = pd.DataFrame(np.zeros((n_bins, len(columns))), columns=columns)
+    oot_form = pd.DataFrame(np.zeros((n_bins, len(columns))), columns=columns)
+    
+    # Get record counts
+    trn_rcd = len(y_train)
+    tst_rcd = len(y_test)
+    oot_rcd = len(y_oot)
+    
+    # Get predictions
+    trn_preprob = model.predict_proba(X_train)[:, 1]
+    tst_preprob = model.predict_proba(X_test)[:, 1]
+    oot_preprob = model.predict_proba(X_oot)[:, 1]
+    
+    # Calculate goods and bads
+    trn_bads = sum(y_train)
+    trn_goods = trn_rcd - trn_bads
+    tst_bads = sum(y_test)
+    tst_goods = tst_rcd - tst_bads
+    oot_bads = sum(y_oot)
+    oot_goods = oot_rcd - oot_bads
+    
+    # Calculate fraud rates
+    trn_fraud_rate = trn_bads / trn_rcd
+    tst_fraud_rate = tst_bads / tst_rcd
+    oot_fraud_rate = oot_bads / oot_rcd
+    
+    print(f"\n{model_name} - Data Summary:")
+    print(f"Train: {trn_goods:,} goods, {trn_bads:,} bads, fraud rate: {trn_fraud_rate:.2%}")
+    print(f"Test:  {tst_goods:,} goods, {tst_bads:,} bads, fraud rate: {tst_fraud_rate:.2%}")
+    print(f"OOT:   {oot_goods:,} goods, {oot_bads:,} bads, fraud rate: {oot_fraud_rate:.2%}")
+    
+    # Calculate bin sizes (using integer division and handling remainder)
+    trn_bin_rcd = (trn_rcd + n_bins - 1) // n_bins  # Equivalent to ceil(trn_rcd / n_bins)
+    tst_bin_rcd = (tst_rcd + n_bins - 1) // n_bins
+    oot_bin_rcd = (oot_rcd + n_bins - 1) // n_bins
+    
+    
+    # Create sorted datasets
+    TRAIN = pd.DataFrame({
+        'prediction_probability': trn_preprob,
+        'label': y_train
+    }).sort_values('prediction_probability', ascending=False)
+    
+    TEST = pd.DataFrame({
+        'prediction_probability': tst_preprob,
+        'label': y_test
+    }).sort_values('prediction_probability', ascending=False)
+    
+    OOT = pd.DataFrame({
+        'prediction_probability': oot_preprob,
+        'label': y_oot
+    }).sort_values('prediction_probability', ascending=False)
+    
+    # Fill forms
+    for i in range(n_bins):
+        # Calculate top rows for each bin
+        trn_top_rows = min(trn_bin_rcd * (i + 1), trn_rcd)
+        tst_top_rows = min(tst_bin_rcd * (i + 1), tst_rcd)
+        oot_top_rows = min(oot_bin_rcd * (i + 1), oot_rcd)
+        
+        # Train form
+        train_form.loc[i, 'pop_bin'] = i + 1
+        train_form.loc[i, 'bin_records'] = trn_bin_rcd if i < n_bins - 1 else trn_rcd - trn_bin_rcd * (n_bins - 1)
+        train_form.loc[i, 'cum_records'] = trn_top_rows
+        train_form.loc[i, 'cum_bads'] = TRAIN['label'].head(trn_top_rows).sum()
+        train_form.loc[i, 'cum_goods'] = trn_top_rows - train_form.loc[i, 'cum_bads']
+        train_form.loc[i, 'cum_%good'] = round(train_form.loc[i, 'cum_goods'] / trn_goods, 4)
+        train_form.loc[i, 'cum_%bad_FDR'] = round(train_form.loc[i, 'cum_bads'] / trn_bads, 4)
+        train_form.loc[i, 'KS'] = (train_form.loc[i, 'cum_%bad_FDR'] - train_form.loc[i, 'cum_%good']) * 100
+        train_form.loc[i, 'FPR'] = round(train_form.loc[i, 'cum_goods'] / train_form.loc[i, 'cum_bads'], 2) if train_form.loc[i, 'cum_bads'] > 0 else 0
+        
+        if i == 0:
+            train_form.loc[i, 'bin_goods'] = train_form.loc[i, 'cum_goods']
+            train_form.loc[i, 'bin_bads'] = train_form.loc[i, 'cum_bads']
+        else:
+            train_form.loc[i, 'bin_goods'] = train_form.loc[i, 'cum_goods'] - train_form.loc[i-1, 'cum_goods']
+            train_form.loc[i, 'bin_bads'] = train_form.loc[i, 'cum_bads'] - train_form.loc[i-1, 'cum_bads']
+        
+        train_form.loc[i, 'bin_%good'] = round(train_form.loc[i, 'bin_goods'] / train_form.loc[i, 'bin_records'], 4)
+        train_form.loc[i, 'bin_%bad'] = round(train_form.loc[i, 'bin_bads'] / train_form.loc[i, 'bin_records'], 4)
+        
+        # Test form (similar logic)
+        test_form.loc[i, 'pop_bin'] = i + 1
+        test_form.loc[i, 'bin_records'] = tst_bin_rcd if i < n_bins - 1 else tst_rcd - tst_bin_rcd * (n_bins - 1)
+        test_form.loc[i, 'cum_records'] = tst_top_rows
+        test_form.loc[i, 'cum_bads'] = TEST['label'].head(tst_top_rows).sum()
+        test_form.loc[i, 'cum_goods'] = tst_top_rows - test_form.loc[i, 'cum_bads']
+        test_form.loc[i, 'cum_%good'] = round(test_form.loc[i, 'cum_goods'] / tst_goods, 4)
+        test_form.loc[i, 'cum_%bad_FDR'] = round(test_form.loc[i, 'cum_bads'] / tst_bads, 4)
+        test_form.loc[i, 'KS'] = (test_form.loc[i, 'cum_%bad_FDR'] - test_form.loc[i, 'cum_%good']) * 100
+        test_form.loc[i, 'FPR'] = round(test_form.loc[i, 'cum_goods'] / test_form.loc[i, 'cum_bads'], 2) if test_form.loc[i, 'cum_bads'] > 0 else 0
+        
+        if i == 0:
+            test_form.loc[i, 'bin_goods'] = test_form.loc[i, 'cum_goods']
+            test_form.loc[i, 'bin_bads'] = test_form.loc[i, 'cum_bads']
+        else:
+            test_form.loc[i, 'bin_goods'] = test_form.loc[i, 'cum_goods'] - test_form.loc[i-1, 'cum_goods']
+            test_form.loc[i, 'bin_bads'] = test_form.loc[i, 'cum_bads'] - test_form.loc[i-1, 'cum_bads']
+        
+        test_form.loc[i, 'bin_%good'] = round(test_form.loc[i, 'bin_goods'] / test_form.loc[i, 'bin_records'], 4)
+        test_form.loc[i, 'bin_%bad'] = round(test_form.loc[i, 'bin_bads'] / test_form.loc[i, 'bin_records'], 4)
+        
+        # OOT form (similar logic)
+        oot_form.loc[i, 'pop_bin'] = i + 1
+        oot_form.loc[i, 'bin_records'] = oot_bin_rcd if i < n_bins - 1 else oot_rcd - oot_bin_rcd * (n_bins - 1)
+        oot_form.loc[i, 'cum_records'] = oot_top_rows
+        oot_form.loc[i, 'cum_bads'] = OOT['label'].head(oot_top_rows).sum()
+        oot_form.loc[i, 'cum_goods'] = oot_top_rows - oot_form.loc[i, 'cum_bads']
+        oot_form.loc[i, 'cum_%good'] = round(oot_form.loc[i, 'cum_goods'] / oot_goods, 4)
+        oot_form.loc[i, 'cum_%bad_FDR'] = round(oot_form.loc[i, 'cum_bads'] / oot_bads, 4)
+        oot_form.loc[i, 'KS'] = (oot_form.loc[i, 'cum_%bad_FDR'] - oot_form.loc[i, 'cum_%good']) * 100
+        oot_form.loc[i, 'FPR'] = round(oot_form.loc[i, 'cum_goods'] / oot_form.loc[i, 'cum_bads'], 2) if oot_form.loc[i, 'cum_bads'] > 0 else 0
+        
+        if i == 0:
+            oot_form.loc[i, 'bin_goods'] = oot_form.loc[i, 'cum_goods']
+            oot_form.loc[i, 'bin_bads'] = oot_form.loc[i, 'cum_bads']
+        else:
+            oot_form.loc[i, 'bin_goods'] = oot_form.loc[i, 'cum_goods'] - oot_form.loc[i-1, 'cum_goods']
+            oot_form.loc[i, 'bin_bads'] = oot_form.loc[i, 'cum_bads'] - oot_form.loc[i-1, 'cum_bads']
+        
+        oot_form.loc[i, 'bin_%good'] = round(oot_form.loc[i, 'bin_goods'] / oot_form.loc[i, 'bin_records'], 4)
+        oot_form.loc[i, 'bin_%bad'] = round(oot_form.loc[i, 'bin_bads'] / oot_form.loc[i, 'bin_records'], 4)
+    
+    # Convert to appropriate data types
+    for form in [train_form, test_form, oot_form]:
+        form['pop_bin'] = form['pop_bin'].astype(int)
+        form['bin_records'] = form['bin_records'].astype(int)
+        form['bin_goods'] = form['bin_goods'].astype(int)
+        form['bin_bads'] = form['bin_bads'].astype(int)
+        form['cum_records'] = form['cum_records'].astype(int)
+        form['cum_goods'] = form['cum_goods'].astype(int)
+        form['cum_bads'] = form['cum_bads'].astype(int)
+    
+    return {
+        'train_form': train_form,
+        'test_form': test_form,
+        'oot_form': oot_form,
+        'fraud_rates': {
+            'train': trn_fraud_rate,
+            'test': tst_fraud_rate,
+            'oot': oot_fraud_rate
+        }
+    }
+
+
+def plot_performance_metrics(forms_dict, model_name="Model"):
+    """
+    Create comprehensive visualizations for model performance metrics.
+    
+    Parameters:
+    -----------
+    forms_dict : dict
+        Dictionary containing train_form, test_form, oot_form from calculate_performance_forms
+    model_name : str
+        Name of the model for display
+    """
+    
+    train_form = forms_dict['train_form']
+    test_form = forms_dict['test_form']
+    oot_form = forms_dict['oot_form']
+    
+    # Create figure with subplots
+    fig = plt.figure(figsize=(20, 15))
+    
+    # 1. Cumulative Fraud Detection Rate (FDR)
+    ax1 = plt.subplot(3, 3, 1)
+    ax1.plot(train_form['pop_bin'], train_form['cum_%bad_FDR'] * 100, 'b-o', label='Train', linewidth=2)
+    ax1.plot(test_form['pop_bin'], test_form['cum_%bad_FDR'] * 100, 'g-s', label='Test', linewidth=2)
+    ax1.plot(oot_form['pop_bin'], oot_form['cum_%bad_FDR'] * 100, 'r-^', label='OOT', linewidth=2)
+    ax1.set_xlabel('Population Bin (5% each)')
+    ax1.set_ylabel('Cumulative % of Frauds Captured')
+    ax1.set_title('Cumulative Fraud Detection Rate (FDR)')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    ax1.set_xticks(range(1, 21))
+    
+    # 2. KS Statistic
+    ax2 = plt.subplot(3, 3, 2)
+    ax2.plot(train_form['pop_bin'], train_form['KS'], 'b-o', label='Train', linewidth=2)
+    ax2.plot(test_form['pop_bin'], test_form['KS'], 'g-s', label='Test', linewidth=2)
+    ax2.plot(oot_form['pop_bin'], oot_form['KS'], 'r-^', label='OOT', linewidth=2)
+    ax2.set_xlabel('Population Bin (5% each)')
+    ax2.set_ylabel('KS (%)')
+    ax2.set_title('Kolmogorov-Smirnov (KS) Statistic')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    ax2.set_xticks(range(1, 21))
+    
+    # 3. Bin-wise Fraud Rate
+    ax3 = plt.subplot(3, 3, 3)
+    x = np.arange(1, 21)
+    width = 0.25
+    ax3.bar(x - width, train_form['bin_%bad'], width, label='Train', alpha=0.8)
+    ax3.bar(x, test_form['bin_%bad'], width, label='Test', alpha=0.8)
+    ax3.bar(x + width, oot_form['bin_%bad'], width, label='OOT', alpha=0.8)
+    ax3.set_xlabel('Population Bin')
+    ax3.set_ylabel('Fraud Rate in Bin')
+    ax3.set_title('Bin-wise Fraud Rate Distribution')
+    ax3.legend()
+    ax3.grid(True, alpha=0.3, axis='y')
+    ax3.set_xticks(range(1, 21, 2))
+    
+    # 4. Cumulative Good vs Bad Distribution
+    ax4 = plt.subplot(3, 3, 4)
+    ax4.plot(train_form['cum_%good'] * 100, train_form['cum_%bad_FDR'] * 100, 'b-', label='Train', linewidth=2)
+    ax4.plot(test_form['cum_%good'] * 100, test_form['cum_%bad_FDR'] * 100, 'g-', label='Test', linewidth=2)
+    ax4.plot(oot_form['cum_%good'] * 100, oot_form['cum_%bad_FDR'] * 100, 'r-', label='OOT', linewidth=2)
+    ax4.plot([0, 100], [0, 100], 'k--', alpha=0.5, label='Random')
+    ax4.set_xlabel('Cumulative % of Goods')
+    ax4.set_ylabel('Cumulative % of Bads (Frauds)')
+    ax4.set_title('Lorenz Curve / CAP Curve')
+    ax4.legend()
+    ax4.grid(True, alpha=0.3)
+    ax4.set_xlim(0, 100)
+    ax4.set_ylim(0, 100)
+    
+    # 5. Lift Chart
+    ax5 = plt.subplot(3, 3, 5)
+    baseline_fraud_rate = forms_dict['fraud_rates']['train']
+    train_lift = (train_form['bin_%bad'] / baseline_fraud_rate).replace([np.inf, -np.inf], 0)
+    test_lift = (test_form['bin_%bad'] / forms_dict['fraud_rates']['test']).replace([np.inf, -np.inf], 0)
+    oot_lift = (oot_form['bin_%bad'] / forms_dict['fraud_rates']['oot']).replace([np.inf, -np.inf], 0)
+    
+    ax5.plot(train_form['pop_bin'], train_lift, 'b-o', label='Train', linewidth=2)
+    ax5.plot(test_form['pop_bin'], test_lift, 'g-s', label='Test', linewidth=2)
+    ax5.plot(oot_form['pop_bin'], oot_lift, 'r-^', label='OOT', linewidth=2)
+    ax5.axhline(y=1, color='k', linestyle='--', alpha=0.5)
+    ax5.set_xlabel('Population Bin (5% each)')
+    ax5.set_ylabel('Lift')
+    ax5.set_title('Lift Chart (vs Baseline Fraud Rate)')
+    ax5.legend()
+    ax5.grid(True, alpha=0.3)
+    ax5.set_xticks(range(1, 21))
+    
+    # 6. Capture Rate at Different Cutoffs
+    ax6 = plt.subplot(3, 3, 6)
+    cutoffs = [1, 3, 5, 10, 20]  # Top x bins (5% each)
+    train_capture = [train_form.loc[c-1, 'cum_%bad_FDR'] * 100 for c in cutoffs]
+    test_capture = [test_form.loc[c-1, 'cum_%bad_FDR'] * 100 for c in cutoffs]
+    oot_capture = [oot_form.loc[c-1, 'cum_%bad_FDR'] * 100 for c in cutoffs]
+    
+    x_pos = np.arange(len(cutoffs))
+    width = 0.25
+    ax6.bar(x_pos - width, train_capture, width, label='Train', alpha=0.8)
+    ax6.bar(x_pos, test_capture, width, label='Test', alpha=0.8)
+    ax6.bar(x_pos + width, oot_capture, width, label='OOT', alpha=0.8)
+    ax6.set_xlabel('Top % of Population')
+    ax6.set_ylabel('% of Frauds Captured')
+    ax6.set_title('Fraud Capture Rate at Different Cutoffs')
+    ax6.set_xticks(x_pos)
+    ax6.set_xticklabels([f'{c*5}%' for c in cutoffs])
+    ax6.legend()
+    ax6.grid(True, alpha=0.3, axis='y')
+    
+    # Add value labels on bars
+    for i, v in enumerate(train_capture):
+        ax6.text(i - width, v + 1, f'{v:.1f}%', ha='center', va='bottom', fontsize=8)
+    for i, v in enumerate(test_capture):
+        ax6.text(i, v + 1, f'{v:.1f}%', ha='center', va='bottom', fontsize=8)
+    for i, v in enumerate(oot_capture):
+        ax6.text(i + width, v + 1, f'{v:.1f}%', ha='center', va='bottom', fontsize=8)
+    
+    # 7. Precision (PPV) by Bin
+    ax7 = plt.subplot(3, 3, 7)
+    train_precision = train_form['bin_bads'] / train_form['bin_records']
+    test_precision = test_form['bin_bads'] / test_form['bin_records']
+    oot_precision = oot_form['bin_bads'] / oot_form['bin_records']
+    
+    ax7.plot(train_form['pop_bin'], train_precision * 100, 'b-o', label='Train', linewidth=2)
+    ax7.plot(test_form['pop_bin'], test_precision * 100, 'g-s', label='Test', linewidth=2)
+    ax7.plot(oot_form['pop_bin'], oot_precision * 100, 'r-^', label='OOT', linewidth=2)
+    
+    # Add baseline fraud rates
+    ax7.axhline(y=forms_dict['fraud_rates']['train'] * 100, color='b', linestyle='--', alpha=0.5)
+    ax7.axhline(y=forms_dict['fraud_rates']['test'] * 100, color='g', linestyle='--', alpha=0.5)
+    ax7.axhline(y=forms_dict['fraud_rates']['oot'] * 100, color='r', linestyle='--', alpha=0.5)
+    
+    ax7.set_xlabel('Population Bin (5% each)')
+    ax7.set_ylabel('Precision (%)')
+    ax7.set_title('Precision (PPV) by Population Bin')
+    ax7.legend()
+    ax7.grid(True, alpha=0.3)
+    ax7.set_xticks(range(1, 21))
+    
+    # 8. Summary Statistics Table
+    ax8 = plt.subplot(3, 3, 8)
+    ax8.axis('tight')
+    ax8.axis('off')
+    
+    # Calculate summary metrics
+    summary_data = []
+    for name, form, fraud_rate in [('Train', train_form, forms_dict['fraud_rates']['train']),
+                                   ('Test', test_form, forms_dict['fraud_rates']['test']),
+                                   ('OOT', oot_form, forms_dict['fraud_rates']['oot'])]:
+        max_ks = form['KS'].max()
+        max_ks_bin = form.loc[form['KS'].idxmax(), 'pop_bin']
+        fdr_at_5 = form.loc[0, 'cum_%bad_FDR'] * 100  # Top 5%
+        fdr_at_10 = form.loc[1, 'cum_%bad_FDR'] * 100  # Top 10%
+        fdr_at_20 = form.loc[3, 'cum_%bad_FDR'] * 100  # Top 20%
+        
+        summary_data.append([name, f'{fraud_rate:.2%}', f'{max_ks:.2f}%', f'{max_ks_bin}',
+                           f'{fdr_at_5:.1f}%', f'{fdr_at_10:.1f}%', f'{fdr_at_20:.1f}%'])
+    
+    table = ax8.table(cellText=summary_data,
+                     colLabels=['Dataset', 'Fraud Rate', 'Max KS', 'Max KS Bin', 
+                               'FDR@5%', 'FDR@10%', 'FDR@20%'],
+                     cellLoc='center',
+                     loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.2, 1.5)
+    ax8.set_title('Summary Statistics', fontsize=12, pad=20)
+    
+    # 9. Model Stability Analysis
+    ax9 = plt.subplot(3, 3, 9)
+    metrics = ['Max KS', 'FDR@5%', 'FDR@10%', 'FDR@20%']
+    train_values = [train_form['KS'].max(), 
+                   train_form.loc[0, 'cum_%bad_FDR'] * 100,
+                   train_form.loc[1, 'cum_%bad_FDR'] * 100,
+                   train_form.loc[3, 'cum_%bad_FDR'] * 100]
+    test_values = [test_form['KS'].max(), 
+                  test_form.loc[0, 'cum_%bad_FDR'] * 100,
+                  test_form.loc[1, 'cum_%bad_FDR'] * 100,
+                  test_form.loc[3, 'cum_%bad_FDR'] * 100]
+    oot_values = [oot_form['KS'].max(), 
+                 oot_form.loc[0, 'cum_%bad_FDR'] * 100,
+                 oot_form.loc[1, 'cum_%bad_FDR'] * 100,
+                 oot_form.loc[3, 'cum_%bad_FDR'] * 100]
+    
+    x = np.arange(len(metrics))
+    width = 0.25
+    
+    ax9.bar(x - width, train_values, width, label='Train', alpha=0.8)
+    ax9.bar(x, test_values, width, label='Test', alpha=0.8)
+    ax9.bar(x + width, oot_values, width, label='OOT', alpha=0.8)
+    
+    ax9.set_ylabel('Value (%)')
+    ax9.set_title('Model Stability Across Datasets')
+    ax9.set_xticks(x)
+    ax9.set_xticklabels(metrics)
+    ax9.legend()
+    ax9.grid(True, alpha=0.3, axis='y')
+    
+    # Add value labels
+    for i, v in enumerate(train_values):
+        ax9.text(i - width, v + 0.5, f'{v:.1f}', ha='center', va='bottom', fontsize=8)
+    for i, v in enumerate(test_values):
+        ax9.text(i, v + 0.5, f'{v:.1f}', ha='center', va='bottom', fontsize=8)
+    for i, v in enumerate(oot_values):
+        ax9.text(i + width, v + 0.5, f'{v:.1f}', ha='center', va='bottom', fontsize=8)
+    
+    plt.suptitle(f'{model_name} - Performance Analysis', fontsize=16, y=0.98)
+    plt.tight_layout()
+    plt.show()
+    
+    # Display forms
+    print(f"\n{model_name} - Train Form (Top 5 bins):")
+    display(train_form.head())
+    
+    print(f"\n{model_name} - Test Form (Top 5 bins):")
+    display(test_form.head())
+    
+    print(f"\n{model_name} - OOT Form (Top 5 bins):")
+    display(oot_form.head())
+
+
+# Example usage
+"""
+# Assuming you have a fitted model and data
+forms_dict = calculate_performance_forms(
+    model=your_fitted_model,
+    X_train=X_train,
+    y_train=y_train,
+    X_test=X_test,
+    y_test=y_test,
+    X_oot=X_oot,
+    y_oot=y_oot,
+    n_bins=20,
+    model_name="Gradient Boosting"
+)
+
+# Plot the results
+plot_performance_metrics(forms_dict, model_name="Gradient Boosting")
+
+# Access individual forms if needed
+train_form = forms_dict['train_form']
+test_form = forms_dict['test_form']
+oot_form = forms_dict['oot_form']
+"""
